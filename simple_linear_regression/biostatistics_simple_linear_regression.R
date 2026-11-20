@@ -68,6 +68,54 @@ ggplot() +
               slope = linear_model$coefficients[[2]]) +
   coord_fixed()
 
+# Residuals ----
+
+linear_model$residuals
+summary(linear_model$residuals)
+
+# Coefficients ----
+
+linear_model$coefficients
+summary(linear_model)
+
+# Residual standard error
+rse <- sqrt(sum(linear_model$residuals^2) / (length(linear_model$residuals) - 2))
+all.equal(rse, summary(linear_model)$sigma)
+
+# Standard error for the slope
+rse / sqrt(sum((df$weight - mean(df$weight))^2))
+
+# Standard error for the intercept
+rse * sqrt((1 / length(df$weight)) + ((mean(df$weight))^2 / sum((df$weight - mean(df$weight))^2)))
+
+x <- df$weight
+y <- df$height
+n <- length(x)
+
+# Residual standard error
+s <- sqrt(sum(resid(linear_model)^2) / (n - 2))
+
+Sxx <- sum((x - mean(x))^2)
+
+se_slope     <- s / sqrt(Sxx)
+se_intercept <- s * sqrt(1/n + mean(x)^2 / Sxx)
+
+c(se_intercept = se_intercept, se_slope = se_slope)
+
+X <- model.matrix(linear_model)          # design matrix (column of 1s + x)
+s2 <- sum(resid(linear_model)^2) / df.residual(linear_model)
+vcov_manual <- s2 * solve(t(X) %*% X)
+sqrt(diag(vcov_manual))
+
+sqrt(diag(vcov(linear_model)))
+coef(summary(linear_model))[, "Std. Error"]
+
+est <- coef(linear_model)
+se  <- c(se_intercept, se_slope)
+t   <- est / se
+p   <- 2 * pt(-abs(t), df = n - 2)
+cbind(est, se, t, p)
+
 # t-value = (estimate - 0) / standard error
 
 (summary(linear_model)$coefficients[1] - 0) / summary(linear_model)$coefficients[3]
@@ -76,7 +124,7 @@ summary(linear_model)$coefficients[5]
 (summary(linear_model)$coefficients[2] - 0) / summary(linear_model)$coefficients[4]
 summary(linear_model)$coefficients[6]
 
-pt(q = summary(linear_model)$coefficients[5], df = 29, lower.tail = F)
+# pt(q = summary(linear_model)$coefficients[5], df = 29, lower.tail = F)
 
 
 # Setup
@@ -132,3 +180,83 @@ c(R2, s$r.squared)
 c(adjR2, s$adj.r.squared)
 c(Fstat, s$fstatistic["value"])
 c(Fpval, pf(s$fstatistic[1], s$fstatistic[2], s$fstatistic[3], lower.tail = FALSE))
+
+# Diagnostics ----
+
+# Perform visual diagnostics
+par(mfrow = c(2, 2))   # Plot in a 2x2 grid
+plot(LM, which = 1)    # Residuals vs fitted
+qqPlot(LM, reps = 1e4) # QQ-plot
+mtext("QQ-plot", 3, 0.25)
+plot(LM, which = 3)    # Scale-location
+plot(LM, which = 5)    # Cook's distance
+par(mfrow = c(1, 1))   # Restore the default
+
+## Residuals vs. fitted ----
+
+plot(linear_model, which = 1)
+
+linear_model |> 
+  augment() |> 
+  ggplot(aes(x = .fitted, y = .resid)) +
+  geom_point() +
+  geom_hline(yintercept = 0, linetype = "dotted", color = "grey")
+
+## Quantile-quantile plot ----
+
+plot(linear_model, which = 2)
+
+# Extraire les valeurs
+valeurs <- df$height
+
+# Ordonner les valeurs
+valeurs <- sort(valeurs)
+
+# Calcul des ranks
+r <- rank(valeurs)
+
+# Calcul des probabilités cumulées empiriques
+p <- (r - 0.5) / length(valeurs)
+p
+
+# Calcul des quantiles normaux correspondant aux probabilités empiriques : 
+# valeurs qui seraient observées si les données suivaient une loi normale
+quantiles_normaux <- round(qnorm(p, mean = mean(valeurs), sd = sd(valeurs)), 1)
+quantiles_normaux
+
+# Calcul des quantiles normaux centrés réduits correspondant aux probabilités empiriques
+quantiles_normaux_Std <- round(qnorm(p, mean = 0, sd = 1), 1)
+quantiles_normaux_Std
+
+# Assemblage dans un data frame
+mydata <- data.frame(valeurs, r, p, quantiles_normaux, quantiles_normaux_Std)
+
+
+ggplot(mydata, aes(x=quantiles_normaux_Std, y=valeurs))+
+  geom_point()
+
+shapiro.test(x = linear_model$residuals)
+
+## Scale-location ----
+
+plot(linear_model, which = 3)
+
+linear_model |> 
+  augment() |> 
+  ggplot(aes(x = .fitted, y = sqrt(.std.resid))) +
+  geom_point()
+
+# Breusch-Pagan test to assess non-constant variance
+
+
+lmtest::bptest(linear_model)
+
+## Residuals vs. leverage ----
+
+plot(linear_model, which = 5)
+
+# Diagnostics using easystats ----
+
+performance::check_model(linear_model)
+performance::check_normality(linear_model)
+performance::check_heteroscedasticity(linear_model)
